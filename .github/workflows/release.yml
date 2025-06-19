@@ -25,7 +25,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Essential for getting full history to capture all PRs
+          fetch-depth: 0
 
       - name: Get latest release version and calculate new version
         id: get_new_version
@@ -61,11 +61,9 @@ jobs:
 
           echo "New calculated version: v$new_version"
           echo "new_release_version=v$new_version" >> "$GITHUB_OUTPUT"
-          # For the changelog builder, ensure we pass '' if no previous tag, to get all history
           echo "latest_existing_tag=$latest_tag" >> "$GITHUB_OUTPUT"
 
-      - name: Create Git Tag
-        id: create_git_tag
+      - name: Create Git Tag (still useful to push tag before release)
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
@@ -74,39 +72,21 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate Changelog
-        id: generate_changelog
-        uses: mikepenz/release-changelog-builder-action@v5
-        with:
-          fromTag: ${{ steps.get_new_version.outputs.latest_existing_tag == 'v0.0.0' && '' || steps.get_new_version.outputs.latest_existing_tag }}
-          toTag: ${{ steps.get_new_version.outputs.new_release_version }}
-          configurationJson: |
-                {
-                  "template": "# Changes\n\n{{CHANGELOG}}",
-                  "categories": [
-                    {
-                      "title": "",
-                      "labels": ["*"]
-                      "include": []
-                    }
-                  ],
-                  "exclude_labels": ["skip-changelog", "duplicate"], # Labels to explicitly exclude from the changelog
-                  "commit_mode": false # Ensure it processes PRs, not just commits
-                }
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create GitHub Release
+      - name: Create GitHub Release with Auto-Generated Notes (using gh CLI)
         id: create_release
-        uses: actions/create-release@v1
+        run: |
+          NEW_TAG="${{ steps.get_new_version.outputs.new_release_version }}"
+          RELEASE_NAME="Release $NEW_TAG"
+
+          echo "Attempting to create release: $RELEASE_NAME"
+
+          gh release create "$NEW_TAG" \
+            --title "$RELEASE_NAME" \
+            --generate-notes \
+            --draft=false \
+            --prerelease=false
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ steps.get_new_version.outputs.new_release_version }}
-          release_name: Release ${{ steps.get_new_version.outputs.new_release_version }}
-          body: ${{ steps.generate_changelog.outputs.changelog }}
-          draft: false
-          prerelease: false
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Required for gh CLI to authenticate
 
   cleanup_on_failure:
     runs-on: ubuntu-latest
