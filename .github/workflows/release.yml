@@ -81,11 +81,18 @@ jobs:
           fromTag: ${{ steps.get_new_version.outputs.latest_existing_tag == 'v0.0.0' && '' || steps.get_new_version.outputs.latest_existing_tag }}
           toTag: ${{ steps.get_new_version.outputs.new_release_version }}
           configurationJson: |
-            {
-              "template": "# Changes\n\n{{CHANGELOG}}", # <-- CRITICAL: No {{UNCATEGORIZED}} here
-              "exclude_labels": ["skip-changelog", "duplicate", "wip"],
-              "commit_mode": false # Keep this as false if you ONLY want PRs
-            }
+                {
+                  "template": "# Changes\n\n{{CHANGELOG}}",
+                  "categories": [
+                    {
+                      "title": "",
+                      "labels": ["*"]
+                      "include": []
+                    }
+                  ],
+                  "exclude_labels": ["skip-changelog", "duplicate"], # Labels to explicitly exclude from the changelog
+                  "commit_mode": false # Ensure it processes PRs, not just commits
+                }
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
