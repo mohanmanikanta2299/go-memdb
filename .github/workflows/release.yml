@@ -19,14 +19,13 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
-    # Define outputs for this job
     outputs:
       new_release_version: ${{ steps.get_new_version.outputs.new_release_version }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # Essential for getting full history to capture all PRs
 
       - name: Get latest release version and calculate new version
         id: get_new_version
@@ -62,7 +61,7 @@ jobs:
 
           echo "New calculated version: v$new_version"
           echo "new_release_version=v$new_version" >> "$GITHUB_OUTPUT"
-          # Also output the latest_tag for the changelog builder
+          # For the changelog builder, ensure we pass '' if no previous tag, to get all history
           echo "latest_existing_tag=$latest_tag" >> "$GITHUB_OUTPUT"
 
       - name: Create Git Tag
@@ -79,14 +78,19 @@ jobs:
         id: generate_changelog
         uses: mikepenz/release-changelog-builder-action@v5
         with:
+          # If 'latest_existing_tag' is 'v0.0.0', fromTag becomes '',
+          # instructing the action to build the changelog from the very first commit.
+          # Otherwise, it builds from the last official release tag.
           fromTag: ${{ steps.get_new_version.outputs.latest_existing_tag == 'v0.0.0' && '' || steps.get_new_version.outputs.latest_existing_tag }}
           toTag: ${{ steps.get_new_version.outputs.new_release_version }}
           configurationJson: |
-                {
-                  "template": "# Changes\n\n{{CHANGELOG}}",
-                  "exclude_labels": ["skip-changelog", "duplicate", "wip"],
-                  "commit_mode": false
-                }
+            {
+              "template": "# Changes\n\n{{CHANGELOG}}",
+              "exclude_labels": ["skip-changelog", "duplicate", "wip"],
+              "commit_mode": false # Explicitly set to false to ONLY capture PRs. This is the default,
+                                   # but being explicit ensures clarity.
+                                   # Do NOT set to true or "HYBRID" if you only want PRs.
+            }
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -104,8 +108,8 @@ jobs:
 
   cleanup_on_failure:
     runs-on: ubuntu-latest
-    needs: release # This job depends on the 'release' job
-    if: ${{ always() && (needs.release.result == 'failure' || needs.release.result == 'cancelled') }} # Run if release job failed or was cancelled
+    needs: release
+    if: ${{ always() && (needs.release.result == 'failure' || needs.release.result == 'cancelled') }}
     steps:
       - name: Checkout code (for tag deletion)
         uses: actions/checkout@v4
@@ -114,13 +118,12 @@ jobs:
 
       - name: Delete Git Tag on Failure
         run: |
-          # Access the output from the 'release' job using needs.release.outputs
           TAG_TO_DELETE="${{ needs.release.outputs.new_release_version }}"
           if [ -n "$TAG_TO_DELETE" ]; then
             echo "Deleting tag: $TAG_TO_DELETE due to workflow failure/cancellation."
             git config user.name "GitHub Actions"
             git config user.email "actions@github.com"
-            git push origin --delete "$TAG_TO_DELETE" || true # Use || true to prevent the step from failing if tag doesn't exist
+            git push origin --delete "$TAG_TO_DELETE" || true
           else
             echo "No tag to delete or new_release_version not set from previous job."
           fi
